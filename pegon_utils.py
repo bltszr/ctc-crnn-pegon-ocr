@@ -38,11 +38,12 @@ class FilenameOCRDataset(Dataset):
         return len(self.files)
 
 
-# -
+# +
+from collections import OrderedDict
 
 # ROMAN_NUMERALS = "\u2160 \u2161 \u2162 \u2163 \u2164 \u2165 \u2166 \u2167 \u2168 \u2169 \u216A \u216B \u216C \u216D \u216E \u216F \u2180 \u2181 \u2182 \u2183".split()
 # PEGON_CHARS = ['-'] + [' '] + 'َ ِ ُ ً ٍ ٌ ْ ّ ٰ ࣤ \u06e4 \u0653 ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩ ٠ ة ح چ ج ث ت ب ا أ إ آ ؤ ى س ز ر ࢮ ڎ ذ د خ ع ظ ڟ ط ض ص ش ڮ ك ق ڤ ف ڠ غ ي ه و ۑ ئ ن م ل ۔ : ؛ ، ﴾ ﴿ ( ) ! ؟َ « » ۞ ء'.split()
-PEGON_CHARS = ['_'] + [' '] + list(set('َ ِ ُ ً ٍ ٌ ْ ّ َ ٰ ࣤ \u06e4 \u0653 ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩ ٠ ة ح چ ج ث ت ب ا أ إ آ ؤ ى س ز ر ࢮ ڎ ذ د خ ع ظ ڟ ط ض ص ش ڮ ك ق ڤ ف ڠ غ ي ه و ۑ ئ ن م ل ۔ : ؛ ، ( ) ! ؟ « » ۞ ء'.split())) + ['\ufffd']
+PEGON_CHARS = ['_'] + [' '] + list(OrderedDict.fromkeys('َ ِ ُ ً ٍ ٌ ْ ّ َ ٰ ࣤ \u06e4 \u0653 ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩ ٠ ة ح چ ج ث ت ب ا أ إ آ ؤ ى س ز ر ࢮ ڎ ذ د خ ع ظ ڟ ط ض ص ش ڮ ك ق ڤ ف ڠ غ ي ه و ۑ ئ ن م ل ۔ : ؛ ، ( ) ! ؟ « » ۞ ء'.split())) + ['\ufffd']
 CHAR_MAP = {letter: idx for idx, letter in enumerate(PEGON_CHARS)}
 
 # +
@@ -53,6 +54,7 @@ from PIL import Image
 
 class AnnotatedDataset(Dataset):
     tokens_to_ignore = []
+    tokens_to_unknown = []
 
     translation_table = str.maketrans('', '')
     
@@ -67,7 +69,14 @@ class AnnotatedDataset(Dataset):
         self.unknown_char = list(self.char_map.keys())[unknown_idx]
         self.blank_idx = self.char_map[self.blank_char]
         self.unknown_idx = self.char_map[self.unknown_char]
-        self.__class__.remove_pattern = "|".join(map(re.escape, self.__class__.tokens_to_ignore))
+        if len(self.__class__.tokens_to_ignore) == 0:
+            self.__class__.ignore_pattern = r'$^'
+        else:
+            self.__class__.ignore_pattern = "|".join(map(re.escape, self.__class__.tokens_to_ignore))
+        if len(self.__class__.tokens_to_unknown) == 0:
+            self.__class__.unknown_pattern = r'$^'
+        else:
+            self.__class__.unknown_pattern = "|".join(map(re.escape, self.__class__.tokens_to_unknown))
     
     def filename_to_label(self, filename):
         return filename
@@ -82,7 +91,8 @@ class AnnotatedDataset(Dataset):
     
     def label_transform(self, label):
         label = self.filename_to_label(label)
-        label = re.sub(self.__class__.remove_pattern, self.unknown_char, label)
+        label = re.sub(self.__class__.unknown_pattern, self.unknown_char, label)
+        label = re.sub(self.__class__.ignore_pattern, '', label)
         label = label.translate(self.__class__.translation_table)
         
 #         label = [self.to_class(c) for c in filter(lambda c:unicodedata.category(c)[0] != 'C',
@@ -105,10 +115,12 @@ class AnnotatedDataset(Dataset):
 
 
 class PegonAnnotatedDataset(AnnotatedDataset):
-    tokens_to_ignore = ['[CALLIGRAPHY]',
-                    '[NASTALIQ]',
-                    '[UNKNOWN]',
-                    '[VERT]']
+    tokens_to_unknown = ['[CALLIGRAPHY]',
+                        '[NASTALIQ]',
+                        '[UNKNOWN]',
+                        '[VERT]']
+    
+    tokens_to_ignore = ['‌']
 
     translation_table = str.maketrans('1234567890', '١٢٣٤٥٦٧٨٩٠')
     
@@ -118,10 +130,13 @@ class PegonAnnotatedDataset(AnnotatedDataset):
 
 class QuranAnnotatedDataset(AnnotatedDataset):
     tokens_to_ignore = []
+    tokens_to_unknown = []
     
+    # there are far more characters that can be translated, however
+    # at this point it's way too late to correct that
     translation_table = translation_table = str.maketrans(
-        ''.join(list('1234567890') + ['ۡ'] + ['ٗ']),
-        ''.join(list('١٢٣٤٥٦٧٨٩٠') + ['ْ'] + ['ُ']))
+        ''.join(list('1234567890') + ['\u06e1'] + ['\u0657'] + ['\u065e']), # + ['\u0671']),
+        ''.join(list('١٢٣٤٥٦٧٨٩٠') + ['\u0652'] + ['\u064f'] + ['\u064e'])) # + ['\u0627']))
 
 
 # +
@@ -264,38 +279,27 @@ class OCRDataset(Dataset):
 #         blanked_label = self.blank_char + self.blank_char.join(self.char_segment(label)) + self.blank_char
 #         label = list(map(self.to_class, filter(lambda c:unicodedata.category(c)[0] != 'C',
 #                                                blanked_label)))
-        label = list(map(self.to_class, filter(lambda c:unicodedata.category(c)[0] != 'C',
-                                               label)))
+        label = list(map(self.to_class,
+                         filter(lambda c:unicodedata.category(c)[0] != 'C',
+                                label)))
         return cropped_image, label
-# +
-import pdb
 
+
+# -
 def ctc_collate_fn(batch):
-#     max_len = self.total_padded_len
-    # Sort the batch by sequence length (in descending order)
+    
     batch = sorted(batch, key=lambda x: x[0].shape[2], reverse=True)
-
-    # Extract the image tensors and label lists from the sorted batch
-#     pdb.set_trace()
+    
     images = [item[0] for item in batch]
     labels = [torch.Tensor(item[1]) for item in batch]
     label_lengths = torch.LongTensor([len(label) for label in labels])
     
-#     # Pad the label lists with the blank token
-#     labels = [label[:max_len] + [self.char_map['-']] * (max_len-len(label[:max_len])) for label in labels]
-    # Concatenates all the labels
     labels = torch.cat((labels))
 
-    # Stack the image tensors into a single tensor
     images = torch.stack(images, dim=0)
-
-#     # Convert the label lists into tensors
-#     labels = torch.LongTensor(labels)
 
     return images, labels, label_lengths
 
-
-# -
 
 if (__name__ == '__main__') and reread:
     import unicodedata
@@ -321,10 +325,10 @@ class LossHistory:
     def mark_epoch(self):
         self.epoch_boundaries.append(len(self.step_history))
         
-    def plot(self):
+    def plot(self, epoch_alpha=0.5):
         plt.plot(self.step_history)
         for epoch in self.epoch_boundaries:
-            plt.axvline(x=epoch, color='r', linestyle='--')
+            plt.axvline(x=epoch, color='r', linestyle='--', alpha=epoch_alpha)
 
 
 # +
@@ -405,7 +409,7 @@ class CTCTrainer:
         plt.show()
         raise ValueError(f'Output is NaN at {batch_indices}, {output}')
     
-    def _train_loop(self, loss_history, num_epochs, dataloader, debug):
+    def _train_loop(self, loss_history, num_epochs, dataloader, debug, save_path=None):
         for epoch in range(num_epochs):
             running_loss = 0.0
             running_tokens = 0
@@ -458,22 +462,25 @@ class CTCTrainer:
                 # Print the average loss every batch
                 pbar.set_description(f"Epoch [{epoch+1}/{num_epochs}] | Batch [{i+1}/{len(dataloader)}] | Running Loss: {curr_loss:.4f}")
             loss_history.mark_epoch()
+            if save_path != None:
+                self.save(save_path)
     
-    def train(self, num_epochs, debug=False):
+    def train(self, num_epochs, debug=False, save_path=None):
+        before = datetime.datetime.now()
         torch.autograd.set_detect_anomaly(debug)
         self.model.train()
         
         self.loss_history = LossHistory()
-        self._train_loop(self.loss_history, num_epochs, self.dataloader, debug)
-
-        print("Finished training!")
+        self._train_loop(self.loss_history, num_epochs, self.dataloader, debug, save_path=save_path)
+        after = datetime.datetime.now()
+        print(f"Finished training! Took {after - before}.")
         return self.model
 
     def save(self, path):
         torch.save(self.model, path)
 
-    def plot_history(self, path=None):
-        self.loss_history.plot()
+    def plot_history(self, path=None, epoch_alpha=0.5):
+        self.loss_history.plot(epoch_alpha)
         if path != None:
             plt.savefig(path)
         plt.show()
