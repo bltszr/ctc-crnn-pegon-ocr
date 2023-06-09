@@ -140,7 +140,7 @@ class QuranAnnotatedDataset(AnnotatedDataset):
 
 
 # +
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 import json
 import shutil
 import random
@@ -318,22 +318,31 @@ class LossHistory:
     def __init__(self):
         self.step_history = []
         self.epoch_boundaries = []
-        
+        self.val_history = []
+    
     def append(self, loss):
         self.step_history.append(loss)
         
     def mark_epoch(self):
         self.epoch_boundaries.append(len(self.step_history))
         
+    def add_val(self, value):
+        self.val_history.append(value)
+    
     def plot(self, epoch_alpha=0.5):
-        plt.plot(self.step_history)
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+        ax1.plot(self.step_history, color='C0')
+        if len(self.val_history) == len(self.epoch_boundaries):
+            ax2.plot(self.epoch_boundaries, self.val_history, color='C1')
         for epoch in self.epoch_boundaries:
-            plt.axvline(x=epoch, color='r', linestyle='--', alpha=epoch_alpha)
+            ax1.axvline(x=epoch, color='C2', linestyle='--', alpha=epoch_alpha)
 
 
 # +
 from torch.utils.data import DataLoader, Dataset
 import torch.nn.utils as utils
+from torch.utils.data import RandomSampler
 
 class CTCTrainer:
     def __init__(self, model,
@@ -348,18 +357,27 @@ class CTCTrainer:
                  criterion=None,
                  optimizer=None,
                  num_workers=0,
-                 alphabet=PEGON_CHARS):
+                 alphabet=PEGON_CHARS,
+                 sample_rate=None):
         self.blank_idx = blank_idx
         self.collate_fn = collate_fn
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.dataset = dataset
         self.max_norm = max_norm
-        self.dataloader = DataLoader(self.dataset,
+        self.sample_rate = sample_rate
+        if sample_rate != None:
+            sampler = RandomSampler(self.dataset, num_samples=int(len(dataset)*sample_rate))
+            shuffle = False
+        else:
+            sampler = None
+            shuffle = True
+        self.dataloader = DataLoader(dataset,
                                      batch_size=self.batch_size,
-                                     shuffle=True,
+                                     shuffle=shuffle,
                                      num_workers=num_workers,
-                                     collate_fn=self.collate_fn)
+                                     collate_fn=self.collate_fn, 
+                                     sampler=sampler)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.alphabet = alphabet
         
@@ -409,7 +427,8 @@ class CTCTrainer:
         plt.show()
         raise ValueError(f'Output is NaN at {batch_indices}, {output}')
     
-    def _train_loop(self, loss_history, num_epochs, dataloader, debug, save_path=None):
+    def _train_loop(self, loss_history, num_epochs, dataloader, debug, save_path=None,
+                   val_dataloader=None, eval_routine=None, plot_path=None):
         for epoch in range(num_epochs):
             running_loss = 0.0
             running_tokens = 0
@@ -461,17 +480,24 @@ class CTCTrainer:
                 loss_history.append(loss=curr_loss)
                 # Print the average loss every batch
                 pbar.set_description(f"Epoch [{epoch+1}/{num_epochs}] | Batch [{i+1}/{len(dataloader)}] | Running Loss: {curr_loss:.4f}")
+            if val_dataloader and eval_routine:
+                loss_history.add_val(eval_routine(self.model, val_dataloader))
+                self.model.train()
             loss_history.mark_epoch()
             if save_path != None:
                 self.save(save_path)
+            if plot_path != None:
+                self.plot_history(plot_path, save_only=True)
     
-    def train(self, num_epochs, debug=False, save_path=None):
+    def train(self, num_epochs, debug=False, save_path=None,
+              val_dataloader=None, eval_routine=None, plot_path=None):
         before = datetime.datetime.now()
         torch.autograd.set_detect_anomaly(debug)
         self.model.train()
         
         self.loss_history = LossHistory()
-        self._train_loop(self.loss_history, num_epochs, self.dataloader, debug, save_path=save_path)
+        self._train_loop(self.loss_history, num_epochs, self.dataloader, debug, plot_path=plot_path,
+                         save_path=save_path, val_dataloader=val_dataloader, eval_routine=eval_routine)
         after = datetime.datetime.now()
         print(f"Finished training! Took {after - before}.")
         return self.model
@@ -479,11 +505,12 @@ class CTCTrainer:
     def save(self, path):
         torch.save(self.model, path)
 
-    def plot_history(self, path=None, epoch_alpha=0.5):
+    def plot_history(self, path=None, epoch_alpha=0.5, save_only=False):
         self.loss_history.plot(epoch_alpha)
         if path != None:
             plt.savefig(path)
-        plt.show()
+        if not save_only:
+            plt.show()
 
 
 # -
