@@ -41,10 +41,204 @@ class FilenameOCRDataset(Dataset):
 # +
 from collections import OrderedDict
 
-# ROMAN_NUMERALS = "\u2160 \u2161 \u2162 \u2163 \u2164 \u2165 \u2166 \u2167 \u2168 \u2169 \u216A \u216B \u216C \u216D \u216E \u216F \u2180 \u2181 \u2182 \u2183".split()
-# PEGON_CHARS = ['-'] + [' '] + 'َ ِ ُ ً ٍ ٌ ْ ّ ٰ ࣤ \u06e4 \u0653 ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩ ٠ ة ح چ ج ث ت ب ا أ إ آ ؤ ى س ز ر ࢮ ڎ ذ د خ ع ظ ڟ ط ض ص ش ڮ ك ق ڤ ف ڠ غ ي ه و ۑ ئ ن م ل ۔ : ؛ ، ﴾ ﴿ ( ) ! ؟َ « » ۞ ء'.split()
 PEGON_CHARS = ['_'] + [' '] + list(OrderedDict.fromkeys('َ ِ ُ ً ٍ ٌ ْ ّ َ ٰ ࣤ \u06e4 \u0653 ١ ٢ ٣ ٤ ٥ ٦ ٧ ٨ ٩ ٠ ة ح چ ج ث ت ب ا أ إ آ ؤ ى س ز ر ࢮ ڎ ذ د خ ع ظ ڟ ط ض ص ش ڮ ك ق ڤ ف ڠ غ ي ه و ۑ ئ ن م ل ۔ : ؛ ، ( ) ! ؟ « » ۞ ء'.split())) + ['\ufffd']
 CHAR_MAP = {letter: idx for idx, letter in enumerate(PEGON_CHARS)}
+
+# +
+PEGON_CHARS_V2 = [
+    '_',
+    ' ',
+    '"',
+    "'",
+    '(',
+    ')',
+    ':',
+    '«',
+    '»',
+    '،',
+    '؛',
+    '؟',
+    'ء',
+    'آ',
+    'أ',
+    'ؤ',
+    'إ',
+    'ئ',
+    'ا',
+    'ب',
+    'ة',
+    'ت',
+    'ث',
+    'ج',
+    'ح',
+    'خ',
+    'د',
+    'ذ',
+    'ر',
+    'ز',
+    'س',
+    'ش',
+    'ص',
+    'ض',
+    'ط',
+    'ظ',
+    'ع',
+    'غ',
+    'ػ',
+    'ؼ',
+    'ؽ',
+    'ؾ',
+    'ؿ',
+    'ـ',
+    'ف',
+    'ق',
+    'ك',
+    'ل',
+    'م',
+    'ن',
+    'ه',
+    'و',
+    'ى',
+    'ي',
+    'ً',
+    'ٌ',
+    'ٍ',
+    'َ',
+    'ُ',
+    'ِ',
+    'ّ',
+    'ْ',
+    'ٓ',
+    'ٔ',
+    'ٕ',
+    'ٖ',
+    '٠',
+    '١',
+    '٢',
+    '٣',
+    '٤',
+    '٥',
+    '٦',
+    '٧',
+    '٨',
+    '٩',
+    '٬',
+    '٭',
+    'ٮ',
+    'ٰ',
+    'ٱ',
+    'ٴ',
+    'ٶ',
+    'پ',
+    'څ',
+    'چ',
+    'ڊ',
+    'ڎ',
+    'ڟ',
+    'ڠ',
+    'ڤ',
+    'ڨ',
+    'ک',
+    'ڬ',
+    'ڮ',
+    'گ',
+    'ڳ',
+    'ڽ',
+    'ۋ',
+    'ی',
+    'ۏ',
+    'ۑ',
+    '۔',
+    '۰',
+    '۱',
+    '۲',
+    '۳',
+    '۷',
+    '۸',
+    '۹',
+    'ݘ',
+    'ݢ',
+    'ࢨ',
+    'ࢮ',
+    'ࣤ',
+    '\ufffd'
+]
+
+CHAR_MAP_V2 = {letter: idx for idx, letter in enumerate(PEGON_CHARS_V2)}
+
+# +
+# label transforms
+
+normalization_table = [
+    ('ٙ', 'ٓ'), # zwarakay
+    ('ٞ', 'َ'), # fatha with two dots
+    ('ٟ', 'ٕ'), # wavy hamza below
+    ('ڪ', 'ك'), # swash kaf
+    ('ۃ', 'ة'),  # ta marbuta akhir
+    
+    ('ࣰ','ً'),
+    
+    ('ࣱ','ٌ'),
+    
+    ('ࣲ','ٍ'),
+    
+    ('ﮬ', 'ه'),
+    
+    ('ﷲ', 'اللّٰه'),
+    ('‘', '\''),
+    ('’', '\''),
+    ('“', '"'),
+    ('”', '"'),
+    ('ﺃ', 'أ'),
+    ('ﺎ','ا'),
+    ('ﺑ','ب'),
+    ('ﺓ','ة'),
+    ('ﺗ','ت'),
+    ('ﺘ','ت'),
+    ('ﺪ','د'),
+    ('ﺮ','ر'),
+    ('ﺴ','س'),
+    ('ﺷ','ش'),
+    ('ﺻ','ص'),
+    ('ﺿ','ض'),
+    ('ﻋ','ع'),
+    ('ﻖ','ق'),
+    ('ﻙ','ك'),
+    ('ﻛ','ك'),
+    ('ﻞ','ل'),
+    ('ﻟ','ل'),
+    ('ﻠ','ل'),
+    ('ﻢ','م'),
+    ('ﻣ','م'),
+    ('ﻥ','ن'),
+    ('ﻨ','ن'),
+    ('ﻬ','ه'),
+    ('ﻭ','و'),
+    ('ﻮ','و'),
+    ('ﻰ','ى'),
+    ('ﻲ','ي'),
+    ('ﻷ','لأ'),
+    ('ﻻ','لا'),
+    ('ﻼ','لا'),
+    ('ﭪ', 'ڤ'),
+    ('ٗ','ُ'),
+    ('ٝ','ُ'),
+    (',', '،'),
+    (';', '؛'),
+    ('٫','،')
+]
+
+def unicode_escape(label):
+    return ''.join(filter(lambda c:unicodedata.category(c)[0] != 'C', label))
+
+def arabic_normalize(label):
+    for target, sub in normalization_table:
+        label = re.sub(target, sub, label)
+    return label
+
+def filename_to_label(filename):
+    return filename
+
 
 # +
 import unicodedata, glob, os, re
@@ -69,6 +263,7 @@ class AnnotatedDataset(Dataset):
         self.unknown_char = list(self.char_map.keys())[unknown_idx]
         self.blank_idx = self.char_map[self.blank_char]
         self.unknown_idx = self.char_map[self.unknown_char]
+        self.label_transform = self.default_label_transform
         if len(self.__class__.tokens_to_ignore) == 0:
             self.__class__.ignore_pattern = r'$^'
         else:
@@ -77,9 +272,7 @@ class AnnotatedDataset(Dataset):
             self.__class__.unknown_pattern = r'$^'
         else:
             self.__class__.unknown_pattern = "|".join(map(re.escape, self.__class__.tokens_to_unknown))
-    
-    def filename_to_label(self, filename):
-        return filename
+            
     def to_class(self, char):
         try:
             return self.char_map[char]
@@ -89,15 +282,15 @@ class AnnotatedDataset(Dataset):
     def char_segment(self, label):
         return list(label)
     
-    def label_transform(self, label):
-        label = self.filename_to_label(label)
+    def default_label_transform(self, label):
+        label = filename_to_label(label)
+        
         label = re.sub(self.__class__.unknown_pattern, self.unknown_char, label)
         label = re.sub(self.__class__.ignore_pattern, '', label)
         label = label.translate(self.__class__.translation_table)
-        
-#         label = [self.to_class(c) for c in filter(lambda c:unicodedata.category(c)[0] != 'C',
-#                                                   f'-{"-".join(self.char_segment(label))}-')]
-        label = list(map(self.to_class, filter(lambda c:unicodedata.category(c)[0] != 'C', label)))
+        label = unicode_escape(label)
+        label = arabic_normalize(label)
+        label = list(map(self.to_class, label))
         return label
 
     def __getitem__(self, idx):
@@ -718,7 +911,7 @@ class BestPathDecoder(CTCDecoder):
 from jiwer import wer, cer
 from itertools import starmap
 
-def evaluate(decoder, dataloader):
+def evaluate(decoder, dataloader, return_preds=False):
     char_map = decoder.alphabet
     
     def decode(arr):
@@ -730,6 +923,7 @@ def evaluate(decoder, dataloader):
     
     cers = []
     wers = []
+    preds = []
     tot_cer = 0
     tot_wer = 0
     num_examples = 0
@@ -738,6 +932,7 @@ def evaluate(decoder, dataloader):
             images = images.to('cuda')
             labels = map(lambda tensor:tensor.type(torch.int), labels.split(tuple(target_lengths.cpu())))
             outputs = decoder.infer(images)
+            preds.append(outputs)
             for j, (output, true_label) in enumerate(zip(outputs, map(decode, labels))):
                 label = true_label.replace(decoder.blank_char, '')
                 try:
@@ -755,7 +950,10 @@ def evaluate(decoder, dataloader):
                 tot_wer += wer_
                 num_examples += 1
                 pbar.set_description(f" Example: {num_examples} | CER: {tot_cer/(num_examples):.4f} | WER: {tot_wer/(num_examples):.4f}")
-    return cers, wers
+    if return_preds:
+        return cers, wers, preds
+    else:
+        return cers, wers
 
 
 # +
@@ -780,6 +978,7 @@ def plot_cer_wer(cers, wers, path=None):
 
 # -
 
-len(PegonAnnotatedDataset('/workspace/Dataset/pegon-ocr-patched'))
-
-
+def eval_routine(model, dataloader):
+    decoder = BestPathDecoder(model, CHAR_MAP, blank_char=PEGON_CHARS[0])
+    cers, wers = evaluate(decoder, dataloader)
+    return np.mean(cers)
