@@ -149,13 +149,6 @@ PEGON_CHARS_V2 = [
     'ۏ',
     'ۑ',
     '۔',
-    '۰',
-    '۱',
-    '۲',
-    '۳',
-    '۷',
-    '۸',
-    '۹',
     'ݘ',
     'ݢ',
     'ࢨ',
@@ -225,7 +218,17 @@ normalization_table = [
     ('ٝ','ُ'),
     (',', '،'),
     (';', '؛'),
-    ('٫','،')
+    ('٫','،'),
+    ('۰','٠'),
+    ('۱','١'),
+    ('۲','٢'),
+    ('۳','٣'),
+    ('۴','٤'),
+    ('۵','٥'),
+    ('۶','٦'),
+    ('۷','٧'),
+    ('۸','٨'),
+    ('۹','٩'),
 ]
 
 def unicode_escape(label):
@@ -479,6 +482,19 @@ class OCRDataset(Dataset):
 
 
 # -
+def ctc_variable_size_collate_fn(batch):
+    
+    batch = sorted(batch, key=lambda x: x[0].shape[2], reverse=True)
+    
+    images = [item[0] for item in batch]
+    labels = [torch.Tensor(item[1]) for item in batch]
+    label_lengths = torch.LongTensor([len(label) for label in labels])
+    
+    labels = torch.cat((labels))
+
+    return images, labels, label_lengths
+
+
 def ctc_collate_fn(batch):
     
     batch = sorted(batch, key=lambda x: x[0].shape[2], reverse=True)
@@ -626,7 +642,8 @@ class CTCTrainer:
             running_loss = 0.0
             running_tokens = 0
             for i, (images, labels, label_lengths) in (pbar := tqdm(enumerate(dataloader),
-                                                                   total=len(dataloader))):
+                                                                    total=len(dataloader),
+                                                                    leave=False)):
                 
                 if debug:
                     self.debug_blank_labels(labels)
@@ -648,12 +665,12 @@ class CTCTrainer:
                         self.debug_output_nan(output, images, labels)
                     
                 # Compute the loss
-                image_lengths = output.new_full((output.shape[0],),
+                input_lengths = output.new_full((output.shape[0],),
                                                 output.shape[1],
                                                 dtype=torch.int)
 
                 loss = self.criterion(output.transpose(0, 1), labels,
-                                      input_lengths=image_lengths,
+                                      input_lengths=input_lengths,
                                       target_lengths=label_lengths)
 
                 # Backward pass and optimize
@@ -672,7 +689,7 @@ class CTCTrainer:
                 curr_loss = running_loss/running_tokens
                 loss_history.append(loss=curr_loss)
                 # Print the average loss every batch
-                pbar.set_description(f"Epoch [{epoch+1}/{num_epochs}] | Batch [{i+1}/{len(dataloader)}] | Running Loss: {curr_loss:.4f}")
+                pbar.set_description(f"Epoch [{epoch+1}/{num_epochs}] | Running Loss: {curr_loss:.4f}")
             if val_dataloader and eval_routine:
                 loss_history.add_val(eval_routine(self.model, val_dataloader))
                 self.model.train()
@@ -949,7 +966,7 @@ def evaluate(decoder, dataloader, return_preds=False):
                 tot_cer += cer_
                 tot_wer += wer_
                 num_examples += 1
-                pbar.set_description(f" Example: {num_examples} | CER: {tot_cer/(num_examples):.4f} | WER: {tot_wer/(num_examples):.4f}")
+                pbar.set_description(f"CER: {tot_cer/(num_examples):.4f} | WER: {tot_wer/(num_examples):.4f}")
     if return_preds:
         return cers, wers, preds
     else:
@@ -978,7 +995,7 @@ def plot_cer_wer(cers, wers, path=None):
 
 # -
 
-def eval_routine(model, dataloader):
-    decoder = BestPathDecoder(model, CHAR_MAP, blank_char=PEGON_CHARS[0])
+def eval_routine(model, dataloader, char_map=CHAR_MAP, blank_idx=0):
+    decoder = BestPathDecoder(model, char_map, blank_char=model.ids_to_chars[blank_idx])
     cers, wers = evaluate(decoder, dataloader)
     return np.mean(cers)

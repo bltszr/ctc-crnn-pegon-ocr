@@ -110,9 +110,70 @@ class ResizeAndPadHorizontal:
         assert img.height == self.target_h, f'Expected new height ({h}x{scale_factor}={new_h}) to be equal to target {self.target_h} but got {img.size[0]}'
         assert img.width == self.target_w, f'Expected new width to be equal to target {self.target_w} but got {img.size[1]}'
         return img
+    
+class ResizeToHeight:
+    def __init__(self, target_h):
+        self.target_h = target_h
+
+    def __call__(self, img):
+        # Calculate scaling factor
+        h = img.height
+        w = img.width
+        scale_factor = self.target_h / h
+        
+        # Resize image        
+        img = img.resize((round(w * scale_factor),
+                          round(h * scale_factor)))
+        
+        return img
 
 
 # -
+
+class CTCNoRNNNoStretch(nn.Module):
+    def __init__(self, image_height, conv_channels,
+                 ids_to_chars):
+        super().__init__()
+        self.ids_to_chars = ids_to_chars
+        num_classes = len(self.ids_to_chars)
+        self.image_height = image_height
+        self.conv_channels = conv_channels
+
+        # CNN part, downsampling 2 times
+        self.conv1 = nn.Conv2d(in_channels=1,
+                               out_channels=conv_channels[0],
+                               kernel_size=3, padding=1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv2 = nn.Conv2d(in_channels=conv_channels[0],
+                               out_channels=conv_channels[1],
+                               kernel_size=3, padding=1)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        # first dense
+        self.fc1 = nn.Linear(in_features=conv_channels[1] * (self.image_height//4),
+                             out_features=num_classes)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = F.relu(x)
+
+        x = self.pool1(x)
+
+        x = self.conv2(x)
+        x = F.relu(x)
+
+        x = self.pool2(x)
+        
+        x = x.permute(0, 3, 1, 2).reshape(x.shape[0],
+                                          x.shape[3],
+                                          x.shape[1] * x.shape[2])
+
+        x = self.fc1(x)
+        
+        x = x.log_softmax(2)
+        return x        
+
 
 class CTCCRNNNoStretchV2(nn.Module):
     def __init__(self, image_height, image_width,
